@@ -31,12 +31,13 @@ namespace WebLinq.Samples
             var samples =
                 from s in new[]
                 {
-                    new { Title = nameof(GoogleSearch)          , Query = GoogleSearch()           },
-                    new { Title = nameof(QueenSongs)            , Query = QueenSongs()             },
-                    new { Title = nameof(ScheduledTasksViaSpawn), Query = ScheduledTasksViaSpawn() },
-                    new { Title = nameof(TopHackerNews)         , Query = TopHackerNews(100)       },
-                    new { Title = nameof(MsdnBooksXmlSample)    , Query = MsdnBooksXmlSample()     },
-                    new { Title = nameof(MockarooCsv)           , Query = MockarooCsv()            },
+                    //new { Title = nameof(GoogleSearch)          , Query = GoogleSearch()           },
+                    //new { Title = nameof(QueenSongs)            , Query = QueenSongs()             },
+                    //new { Title = nameof(ScheduledTasksViaSpawn), Query = ScheduledTasksViaSpawn() },
+                    //new { Title = nameof(TopHackerNews)         , Query = TopHackerNews(100)       },
+                    //new { Title = nameof(MsdnBooksXmlSample)    , Query = MsdnBooksXmlSample()     },
+                    //new { Title = nameof(MockarooCsv)           , Query = MockarooCsv()            },
+                    new { Title = nameof(Biotradestatus)        , Query = Biotradestatus()         },
                 }
                 where args.Length == 0
                    || args.Any(a => s.Title.Equals(a, StringComparison.OrdinalIgnoreCase))
@@ -239,6 +240,53 @@ namespace WebLinq.Samples
                 Email     = row[cols.Email    ],
                 Gender    = row[cols.Gender   ],
                 IpAddress = row[cols.IpAddress],
+            };
+
+        static IObservable<object> Biotradestatus() => 
+            from cols in Observable.Return(new
+            {
+                Country = new DataColumn("Country"),
+                Company = new DataColumn("Company"),
+                Product = new DataColumn("Product")
+            })
+            
+            from html in Http.Get(new Uri("http://www.biotradestatus.com/"))
+                             .SubmitTo(new Uri("http://www.biotradestatus.com/"), "form[name='DisclaimerForm']", new NameValueCollection())
+                             .SubmitTo(new Uri("http://www.biotradestatus.com/results.cfm"), "#commercialapprovalstatus", new NameValueCollection
+                             {
+                                 ["oecd_status_id"] = "1",
+                                 ["approval_id"] = "41",
+                                 ["selectedcommodity"] = "-1",
+                                 ["selectedcompany"] = "-1",
+                                 ["oecd_event_option"] = "event",
+                                 ["selectedevent"] = "-1",
+                                 ["country_id"] = "-1",
+                                 ["alldates"] = "1",
+                                 ["startdate"] = "02/08/2011",
+                                 ["enddate"] = "01/18/2017",
+                                 ["submitform"] = "1",
+                             })
+                             .Html()
+                             .Content()
+
+            from byCountry in html.QuerySelectorAll("#body > div.selectheader")
+                             .Zip(html.QuerySelectorAll("#body > table"), (head, table) => new { name = head.InnerText.Trim(), table })
+            from row in byCountry.table
+                            .TableRows((_, rowCells) => rowCells
+                                .Take(2)    // for simplicity take only 2 first columns
+                                .Select(c => c.InnerText.Trim())
+                                .Select(cell => cell.Contains(",") ? "\"" + cell.Replace("\"", "\"\"") + "\"" : cell) // csv excaping
+                                .Aggregate((acc, next) => $"{acc},{next}"))
+                            .Select(x => $"{byCountry.name},{x}")
+                            .ToObservable()
+                            .CsvToDataTable(cols.Country, cols.Company, cols.Product)
+
+            from tableRow in row.AsEnumerable()
+            select new
+            {
+                Country = tableRow[cols.Country],
+                Company = tableRow[cols.Company],
+                Product = tableRow[cols.Product]
             };
     }
 }
